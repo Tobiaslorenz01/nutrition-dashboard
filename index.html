@@ -1,0 +1,1157 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8" />
+  <!-- viewport-fit=cover fuer randlose iPhone-Darstellung (Notch/Dynamic Island) -->
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <title>Ernährungs- & Performance-Coach</title>
+
+  <!-- PWA / iOS -->
+  <link rel="manifest" href="manifest.json" />
+  <meta name="theme-color" content="#1a1a2e" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="Ernährung" />
+  <link rel="apple-touch-icon" href="icon.svg" />
+  <link rel="icon" type="image/svg+xml" href="icon.svg" />
+
+  <!-- CDNs: Chart.js + PapaParse -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
+
+  <style>
+    /* ============================================================
+       DESIGN-TOKENS
+       ============================================================ */
+    :root {
+      --bg:        #1a1a2e;   /* App-Hintergrund (dunkel) */
+      --surface:   #23233f;   /* Karten */
+      --surface-2: #2c2c4d;   /* erhoehte Flaechen / Balken-Spuren */
+      --border:    #35355c;
+      --ink:       #f4f5fb;   /* Primaertext / Kalorien */
+      --ink-2:     #b9bcd6;   /* Sekundaertext */
+      --ink-muted: #7f84a8;   /* gedaempft */
+
+      /* Makro-Akzentfarben (vom Schema vorgegeben) */
+      --kcal:    #f4f5fb;     /* Kalorien = hell/weiss */
+      --protein: #4FC3F7;     /* Blau */
+      --carbs:   #FFB74D;     /* Orange */
+      --fat:     #81C784;     /* Gruen */
+
+      /* Ampel */
+      --good: #66BB6A;
+      --warn: #FFCA28;
+      --bad:  #EF5350;
+
+      --radius: 18px;
+      --gap: 14px;
+      --touch: 44px;         /* minimale Touch-Zielgroesse */
+      --shadow: 0 6px 20px rgba(0,0,0,.35);
+    }
+
+    * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+
+    html, body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--ink);
+      font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      font-size: 16px;
+      line-height: 1.4;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    /* Safe-Area Padding fuer iPhone */
+    body {
+      padding:
+        env(safe-area-inset-top)
+        env(safe-area-inset-right)
+        env(safe-area-inset-bottom)
+        env(safe-area-inset-left);
+    }
+
+    .wrap {
+      max-width: 820px;
+      margin: 0 auto;
+      padding: 16px 16px 48px;
+    }
+
+    /* ---------- Hinweis-Banner (Beispieldaten) ---------- */
+    .notice {
+      display: none;
+      background: rgba(255,183,77,.12);
+      border: 1px solid rgba(255,183,77,.4);
+      color: var(--carbs);
+      padding: 10px 14px;
+      border-radius: 12px;
+      font-size: 13px;
+      margin-bottom: 14px;
+      text-align: center;
+    }
+    .notice.show { display: block; }
+
+    /* ============================================================
+       HEADER
+       ============================================================ */
+    header.top {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 18px;
+      flex-wrap: wrap;
+    }
+    .top .date {
+      color: var(--ink-2);
+      font-size: 14px;
+      letter-spacing: .3px;
+    }
+    .top .title {
+      font-size: 20px;
+      font-weight: 700;
+      margin: 2px 0 0;
+    }
+    .weight-badge {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 10px 16px;
+      text-align: right;
+      box-shadow: var(--shadow);
+      min-width: 150px;
+    }
+    .weight-badge .val {
+      font-size: 26px;
+      font-weight: 800;
+      line-height: 1;
+    }
+    .weight-badge .sub {
+      font-size: 13px;
+      color: var(--ink-2);
+      margin-top: 4px;
+      display: flex;
+      gap: 6px;
+      justify-content: flex-end;
+      align-items: center;
+    }
+    .trend { font-weight: 700; }
+    .trend.down { color: var(--good); }   /* abnehmen ist das Ziel -> gruen */
+    .trend.up   { color: var(--bad); }
+    .trend.flat { color: var(--ink-muted); }
+
+    /* ============================================================
+       KARTEN / GRID
+       ============================================================ */
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 16px;
+      box-shadow: var(--shadow);
+      margin-bottom: var(--gap);
+    }
+    .card h2 {
+      font-size: 14px;
+      text-transform: uppercase;
+      letter-spacing: .6px;
+      color: var(--ink-2);
+      margin: 0 0 14px;
+      font-weight: 600;
+    }
+
+    /* KPI 2x2 auf Mobile, 4er-Reihe ab Tablet */
+    .kpi-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: var(--gap);
+      margin-bottom: var(--gap);
+    }
+    @media (min-width: 620px) {
+      .kpi-grid { grid-template-columns: repeat(4, 1fr); }
+    }
+
+    .kpi {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 16px 14px;
+      box-shadow: var(--shadow);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 10px;
+      min-height: 150px;
+      justify-content: center;
+    }
+    .kpi .label {
+      font-size: 13px;
+      color: var(--ink-2);
+      font-weight: 600;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
+
+    /* Kalorien-Ring */
+    .ring-wrap { position: relative; width: 112px; height: 112px; }
+    .ring-wrap svg { transform: rotate(-90deg); display: block; }
+    .ring-center {
+      position: absolute; inset: 0;
+      display: flex; flex-direction: column;
+      align-items: center; justify-content: center;
+      text-align: center;
+    }
+    .ring-center .big { font-size: 26px; font-weight: 800; color: var(--kcal); line-height: 1; }
+    .ring-center .small { font-size: 11px; color: var(--ink-2); margin-top: 3px; }
+
+    /* Makro-Balken */
+    .macro-num { font-size: 24px; font-weight: 800; line-height: 1; }
+    .macro-num small { font-size: 13px; font-weight: 600; color: var(--ink-2); }
+    .bar-track {
+      width: 100%;
+      height: 10px;
+      background: var(--surface-2);
+      border-radius: 6px;
+      overflow: hidden;
+    }
+    .bar-fill {
+      height: 100%;
+      border-radius: 6px;
+      width: 0;
+      transition: width .6s ease;
+    }
+    .macro-sub { font-size: 11px; color: var(--ink-muted); }
+
+    /* ============================================================
+       NETTO-BILANZ
+       ============================================================ */
+    .net-top {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 12px;
+      flex-wrap: wrap;
+      margin-bottom: 14px;
+    }
+    .net-big { font-size: 34px; font-weight: 800; }
+    .net-label { font-size: 13px; color: var(--ink-2); }
+    .pill {
+      padding: 4px 12px;
+      border-radius: 999px;
+      font-size: 13px;
+      font-weight: 700;
+    }
+    .compare-row { margin-bottom: 10px; }
+    .compare-row .cl {
+      display: flex; justify-content: space-between;
+      font-size: 13px; color: var(--ink-2); margin-bottom: 5px;
+    }
+    .compare-track { height: 14px; background: var(--surface-2); border-radius: 7px; overflow: hidden; }
+    .compare-fill { height: 100%; border-radius: 7px; transition: width .6s ease; }
+
+    /* ============================================================
+       CHARTS
+       ============================================================ */
+    .chart-head {
+      display: flex; align-items: center; justify-content: space-between;
+      gap: 10px; margin-bottom: 10px; flex-wrap: wrap;
+    }
+    .chart-head h2 { margin: 0; }
+    .seg {
+      display: inline-flex;
+      background: var(--surface-2);
+      border-radius: 10px;
+      padding: 3px;
+      gap: 2px;
+    }
+    .seg button {
+      border: none;
+      background: transparent;
+      color: var(--ink-2);
+      font-size: 13px;
+      font-weight: 600;
+      padding: 8px 12px;
+      border-radius: 8px;
+      min-height: var(--touch);
+      min-width: var(--touch);
+      cursor: pointer;
+    }
+    .seg button.active { background: var(--protein); color: #06202b; }
+
+    .chart-box { position: relative; width: 100%; height: 260px; }
+    .chart-box.donut { height: 260px; max-width: 320px; margin: 0 auto; }
+
+    /* zwei Spalten ab Tablet fuer Gewicht + Donut */
+    .two-col { display: grid; grid-template-columns: 1fr; gap: var(--gap); }
+    @media (min-width: 720px) {
+      .two-col { grid-template-columns: 1.4fr 1fr; align-items: stretch; }
+      .two-col > .card { margin-bottom: 0; }
+    }
+
+    .legend {
+      display: flex; flex-wrap: wrap; gap: 14px;
+      justify-content: center; margin-top: 12px;
+      font-size: 13px; color: var(--ink-2);
+    }
+    .legend span { display: inline-flex; align-items: center; gap: 6px; }
+
+    /* ============================================================
+       WOCHEN-HEATMAP (Tabelle)
+       ============================================================ */
+    .week-table { width: 100%; border-collapse: separate; border-spacing: 6px; }
+    .week-table th, .week-table td { text-align: center; }
+    .week-table thead th {
+      font-size: 12px; color: var(--ink-muted); font-weight: 600; padding-bottom: 2px;
+    }
+    .week-table tbody th {
+      text-align: left; font-size: 12px; color: var(--ink-2);
+      font-weight: 600; white-space: nowrap; padding-right: 6px;
+    }
+    .heat {
+      border-radius: 9px;
+      padding: 10px 4px;
+      font-size: 13px;
+      font-weight: 700;
+      color: #10101c;
+      min-height: var(--touch);
+    }
+    .heat.good { background: var(--good); }
+    .heat.warn { background: var(--warn); }
+    .heat.bad  { background: var(--bad); color: #fff; }
+    .heat.na   { background: var(--surface-2); color: var(--ink-muted); }
+    .week-scroll { overflow-x: auto; }
+
+    /* ============================================================
+       MAHLZEITEN-LOG
+       ============================================================ */
+    .budget {
+      display: flex; align-items: baseline; justify-content: space-between;
+      gap: 10px; margin-bottom: 14px; flex-wrap: wrap;
+    }
+    .budget .num { font-size: 30px; font-weight: 800; }
+    .budget .num.neg { color: var(--bad); }
+    .budget .num.pos { color: var(--good); }
+
+    .meal {
+      display: flex; align-items: center; gap: 12px;
+      padding: 12px 0;
+      border-top: 1px solid var(--border);
+    }
+    .meal:first-of-type { border-top: none; }
+    .meal .mtype {
+      font-size: 11px; font-weight: 700; text-transform: uppercase;
+      letter-spacing: .4px; color: var(--ink-muted);
+      min-width: 86px;
+    }
+    .meal .mbody { flex: 1; min-width: 0; }
+    .meal .mname { font-weight: 600; font-size: 15px; }
+    .meal .mtime { font-size: 12px; color: var(--ink-muted); }
+    .meal .mmacros { font-size: 12px; color: var(--ink-2); margin-top: 2px; }
+    .meal .mmacros b { color: var(--ink); }
+    .meal .mkcal { font-weight: 800; font-size: 17px; white-space: nowrap; }
+
+    .empty { color: var(--ink-muted); font-style: italic; padding: 10px 0; }
+
+    footer.ft {
+      text-align: center; color: var(--ink-muted);
+      font-size: 12px; margin-top: 24px;
+    }
+    .refresh-note { font-size: 12px; color: var(--ink-muted); }
+  </style>
+</head>
+<body data-palette="#4FC3F7,#FFB74D,#81C784">
+  <div class="wrap">
+
+    <!-- Hinweis bei Beispieldaten -->
+    <div class="notice" id="notice">Beispieldaten – URLs in CONFIG eintragen</div>
+
+    <!-- ===================== HEADER ===================== -->
+    <header class="top">
+      <div>
+        <div class="date" id="headerDate">–</div>
+        <div class="title">Ernährungs-Coach</div>
+      </div>
+      <div class="weight-badge">
+        <div class="val" id="weightVal">– kg</div>
+        <div class="sub">
+          <span id="weightDiff">–</span>
+          <span class="trend flat" id="weightTrend">→</span>
+        </div>
+      </div>
+    </header>
+
+    <!-- ===================== 4 KPI-KARTEN ===================== -->
+    <div class="kpi-grid">
+      <!-- Kalorien als Ring -->
+      <div class="kpi">
+        <div class="label"><span class="dot" style="background:var(--kcal)"></span>Kalorien</div>
+        <div class="ring-wrap">
+          <svg width="112" height="112" viewBox="0 0 112 112">
+            <circle cx="56" cy="56" r="48" fill="none" stroke="var(--surface-2)" stroke-width="10"/>
+            <circle id="kcalRing" cx="56" cy="56" r="48" fill="none" stroke="var(--kcal)"
+                    stroke-width="10" stroke-linecap="round"
+                    stroke-dasharray="301.6" stroke-dashoffset="301.6"/>
+          </svg>
+          <div class="ring-center">
+            <div class="big" id="kcalEaten">0</div>
+            <div class="small" id="kcalBudget">/ 1700 kcal</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Protein -->
+      <div class="kpi">
+        <div class="label"><span class="dot" style="background:var(--protein)"></span>Protein</div>
+        <div class="macro-num" id="pNum" style="color:var(--protein)">0<small>g</small></div>
+        <div class="bar-track"><div class="bar-fill" id="pBar" style="background:var(--protein)"></div></div>
+        <div class="macro-sub" id="pSub">Ziel 140 g</div>
+      </div>
+
+      <!-- Carbs -->
+      <div class="kpi">
+        <div class="label"><span class="dot" style="background:var(--carbs)"></span>Carbs</div>
+        <div class="macro-num" id="cNum" style="color:var(--carbs)">0<small>g</small></div>
+        <div class="bar-track"><div class="bar-fill" id="cBar" style="background:var(--carbs)"></div></div>
+        <div class="macro-sub" id="cSub">Ziel 75 g</div>
+      </div>
+
+      <!-- Fett -->
+      <div class="kpi">
+        <div class="label"><span class="dot" style="background:var(--fat)"></span>Fett</div>
+        <div class="macro-num" id="fNum" style="color:var(--fat)">0<small>g</small></div>
+        <div class="bar-track"><div class="bar-fill" id="fBar" style="background:var(--fat)"></div></div>
+        <div class="macro-sub" id="fSub">Ziel 65 g</div>
+      </div>
+    </div>
+
+    <!-- ===================== NETTO-BILANZ ===================== -->
+    <section class="card">
+      <h2>Netto-Bilanz heute</h2>
+      <div class="net-top">
+        <div>
+          <div class="net-big" id="netVal">0 kcal</div>
+          <div class="net-label">Effektives Defizit (gegessen − aktiv)</div>
+        </div>
+        <span class="pill" id="netPill">–</span>
+      </div>
+      <div class="compare-row">
+        <div class="cl"><span>Einnahme (gegessen)</span><span id="inLbl">0 kcal</span></div>
+        <div class="compare-track"><div class="compare-fill" id="inBar" style="background:var(--carbs)"></div></div>
+      </div>
+      <div class="compare-row">
+        <div class="cl"><span>Verbrauch (aktiv)</span><span id="outLbl">0 kcal</span></div>
+        <div class="compare-track"><div class="compare-fill" id="outBar" style="background:var(--fat)"></div></div>
+      </div>
+    </section>
+
+    <!-- ===================== GEWICHT + MAKRO-DONUT ===================== -->
+    <div class="two-col">
+      <!-- Gewichtsverlauf -->
+      <section class="card">
+        <div class="chart-head">
+          <h2>Gewichtsverlauf</h2>
+          <div class="seg" id="rangeSeg">
+            <button data-range="7">7 T</button>
+            <button data-range="30" class="active">30 T</button>
+            <button data-range="90">90 T</button>
+          </div>
+        </div>
+        <div class="chart-box"><canvas id="weightChart"></canvas></div>
+      </section>
+
+      <!-- Makro-Verteilung -->
+      <section class="card">
+        <h2>Makro-Verteilung heute</h2>
+        <div class="chart-box donut"><canvas id="macroChart"></canvas></div>
+        <div class="legend">
+          <span><span class="dot" style="background:var(--protein)"></span>Protein</span>
+          <span><span class="dot" style="background:var(--carbs)"></span>Carbs</span>
+          <span><span class="dot" style="background:var(--fat)"></span>Fett</span>
+        </div>
+      </section>
+    </div>
+
+    <!-- ===================== WOCHEN-UEBERSICHT ===================== -->
+    <section class="card">
+      <h2>Wochen-Übersicht (letzte 7 Tage)</h2>
+      <div class="week-scroll">
+        <table class="week-table" id="weekTable">
+          <thead><tr id="weekHead"></tr></thead>
+          <tbody id="weekBody"></tbody>
+        </table>
+      </div>
+      <div class="legend">
+        <span><span class="dot" style="background:var(--good)"></span>im Ziel</span>
+        <span><span class="dot" style="background:var(--warn)"></span>grenzwertig</span>
+        <span><span class="dot" style="background:var(--bad)"></span>daneben</span>
+      </div>
+    </section>
+
+    <!-- ===================== MAHLZEITEN-LOG ===================== -->
+    <section class="card">
+      <h2>Mahlzeiten heute</h2>
+      <div class="budget">
+        <div>
+          <div class="net-label">Verbleibendes Budget</div>
+          <div class="num" id="budgetNum">1700 kcal</div>
+        </div>
+        <div style="text-align:right">
+          <div class="net-label">Gegessen</div>
+          <div class="num" id="budgetEaten" style="font-size:20px">0 kcal</div>
+        </div>
+      </div>
+      <div id="mealList"></div>
+    </section>
+
+    <footer class="ft">
+      <div class="refresh-note" id="refreshNote">Automatische Aktualisierung aktiv</div>
+    </footer>
+  </div>
+
+  <script>
+  /* ============================================================================
+     CONFIG
+     Leere URLs = Beispieldaten. Trage deine veroeffentlichten Google-Sheets-
+     CSV-URLs ein (Datei > Freigeben > Im Web veroeffentlichen > CSV je Tab).
+     ============================================================================ */
+  const CONFIG = {
+    SHEETS_URL_MEALS: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQdB7KuzPgNh9Vld7fXBC7r_osb7ulWETYFYeacHPp2cJZ0bHi1gxsPg5B3-f_MOFhdPP15fXBBnWuI/pub?gid=1120067753&single=true&output=csv',
+    SHEETS_URL_HEALTH: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQdB7KuzPgNh9Vld7fXBC7r_osb7ulWETYFYeacHPp2cJZ0bHi1gxsPg5B3-f_MOFhdPP15fXBBnWuI/pub?gid=537034369&single=true&output=csv',
+    SHEETS_URL_WEIGHT: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQdB7KuzPgNh9Vld7fXBC7r_osb7ulWETYFYeacHPp2cJZ0bHi1gxsPg5B3-f_MOFhdPP15fXBBnWuI/pub?gid=553249615&single=true&output=csv',
+    SHEETS_URL_SUMMARY: '',
+    TARGET_WEIGHT: 76,
+    TARGET_KCAL: 1700,
+    TARGET_PROTEIN: 140,
+    TARGET_CARBS: 75,
+    TARGET_FAT: 65,
+    REFRESH_INTERVAL: 300,
+  };
+
+  /* Farb-Tokens (gespiegelt aus CSS fuer Chart.js) */
+  const COLORS = {
+    ink: '#f4f5fb', ink2: '#b9bcd6', muted: '#7f84a8',
+    grid: 'rgba(255,255,255,.07)',
+    kcal: '#f4f5fb', protein: '#4FC3F7', carbs: '#FFB74D', fat: '#81C784',
+    good: '#66BB6A', warn: '#FFCA28', bad: '#EF5350',
+    surface: '#23233f',
+  };
+
+  const LS_KEY = 'nutriDashCache_v1';
+
+  /* ============================================================================
+     HILFSFUNKTIONEN: robustes Zahl- & Datums-Parsing
+     ============================================================================ */
+
+  /** Toleriert Komma/Punkt als Dezimaltrenner und Tausenderpunkte. */
+  function parseNum(raw) {
+    if (raw === null || raw === undefined) return 0;
+    if (typeof raw === 'number') return isFinite(raw) ? raw : 0;
+    let s = String(raw).trim();
+    if (!s) return 0;
+    s = s.replace(/[^0-9.,\-]/g, '');          // Einheiten/Leerzeichen entfernen
+    if (s.indexOf(',') > -1 && s.indexOf('.') > -1) {
+      // beide vorhanden: letztes Trennzeichen ist der Dezimaltrenner
+      if (s.lastIndexOf(',') > s.lastIndexOf('.')) {
+        s = s.replace(/\./g, '').replace(',', '.');   // 1.234,56 -> 1234.56
+      } else {
+        s = s.replace(/,/g, '');                       // 1,234.56 -> 1234.56
+      }
+    } else if (s.indexOf(',') > -1) {
+      s = s.replace(',', '.');                         // 1,5 -> 1.5
+    }
+    const n = parseFloat(s);
+    return isFinite(n) ? n : 0;
+  }
+
+  /** Liefert ISO-Datum (YYYY-MM-DD). Toleriert DD.MM.YYYY und DD/MM/YYYY. */
+  function parseDateISO(raw) {
+    if (!raw) return '';
+    const s = String(raw).trim();
+    let m = s.match(/^(\d{4})-(\d{2})-(\d{2})/);        // ISO
+    if (m) return `${m[1]}-${m[2]}-${m[3]}`;
+    m = s.match(/^(\d{1,2})[.\/](\d{1,2})[.\/](\d{4})/); // DD.MM.YYYY
+    if (m) {
+      const d = m[1].padStart(2,'0'), mo = m[2].padStart(2,'0');
+      return `${m[3]}-${mo}-${d}`;
+    }
+    const dt = new Date(s);
+    return isNaN(dt) ? '' : localISO(dt);
+  }
+
+  /** Datum -> 'YYYY-MM-DD' aus LOKALEN Komponenten (kein UTC-Shift wie toISOString). */
+  function localISO(d) {
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${y}-${m}-${day}`;
+  }
+
+  function isoToday(offset = 0) {
+    const d = new Date();
+    d.setDate(d.getDate() + offset);
+    return localISO(d);
+  }
+
+  function fmtDE(iso) {
+    const d = new Date(iso + 'T00:00:00');
+    if (isNaN(d)) return iso;
+    return d.toLocaleDateString('de-DE', { weekday:'long', day:'2-digit', month:'long', year:'numeric' });
+  }
+
+  /** Spaltenwert case-/leerzeichen-tolerant lesen. */
+  function col(row, name) {
+    if (row[name] !== undefined) return row[name];
+    const key = Object.keys(row).find(k => k.trim().toLowerCase() === name.trim().toLowerCase());
+    return key !== undefined ? row[key] : '';
+  }
+
+  /* ============================================================================
+     BEISPIELDATEN (Fallback) – realistisch generiert
+     ============================================================================ */
+  function buildSampleData() {
+    const meals = [], health = [], weight = [], summary = [];
+    const days = 90;
+
+    // Gewicht: ~80 kg -> ~78 kg mit leichtem Rauschen
+    for (let i = days; i >= 0; i--) {
+      const iso = isoToday(-i);
+      const base = 80 - (days - i) * (2 / days);
+      const noise = Math.sin(i * 1.3) * 0.25 + (Math.random() - 0.5) * 0.3;
+      weight.push({ Datum: iso, gewicht: +(base + noise).toFixed(1), notiz: '' });
+    }
+
+    // Health: Schritte, aktive kcal, Workouts (letzte 30 Tage detailliert)
+    const workouts = ['Krafttraining','Laufen','Radfahren','Gehen','Schwimmen','–'];
+    for (let i = 30; i >= 0; i--) {
+      const iso = isoToday(-i);
+      const wt = workouts[(i * 2) % workouts.length];
+      const dauer = wt === '–' ? 0 : 30 + (i % 4) * 10;
+      const wkcal = wt === '–' ? 0 : Math.round(dauer * (wt === 'Laufen' ? 11 : 7));
+      const aktiv = 250 + Math.round(Math.abs(Math.sin(i)) * 350) + wkcal;
+      health.push({
+        Datum: iso,
+        Schritte: 6000 + Math.round(Math.abs(Math.cos(i)) * 7000),
+        aktiveKcal: aktiv,
+        workoutTyp: wt,
+        workoutDauer: dauer,
+        workoutKcal: wkcal,
+      });
+    }
+
+    // Mahlzeiten (letzte 7 Tage) + Tageszusammenfassung
+    const mealTemplates = {
+      Fruehstueck: [
+        ['Haferflocken mit Beeren & Skyr', 420, 32, 48, 11],
+        ['Rührei mit Vollkornbrot',        390, 28, 26, 18],
+        ['Protein-Pancakes',               450, 35, 40, 14],
+      ],
+      Mittagessen: [
+        ['Hähnchen, Reis & Brokkoli',      560, 48, 55, 14],
+        ['Lachs mit Süßkartoffel',         600, 42, 45, 24],
+        ['Linsen-Bowl mit Feta',           520, 30, 58, 18],
+      ],
+      Abendessen: [
+        ['Magerquark mit Nüssen',          360, 40, 18, 14],
+        ['Omelett mit Salat',              330, 28, 10, 20],
+        ['Hüttenkäse & Gemüsesticks',      290, 32, 14, 9],
+      ],
+      Snack: [
+        ['Apfel & Mandeln',                210, 6, 24, 11],
+        ['Proteinriegel',                  200, 20, 20, 7],
+        ['Griechischer Joghurt',           150, 15, 12, 4],
+      ],
+    };
+    const times = { Fruehstueck:'07:45', Mittagessen:'12:30', Abendessen:'19:15', Snack:'16:00' };
+
+    for (let i = 6; i >= 0; i--) {
+      const iso = isoToday(-i);
+      let kcalSum=0, pSum=0, cSum=0, fSum=0;
+      const types = i === 0
+        ? ['Fruehstueck','Mittagessen','Snack']   // heute noch ohne Abendessen -> Budget sichtbar
+        : ['Fruehstueck','Mittagessen','Abendessen','Snack'];
+      types.forEach((t, idx) => {
+        const tpl = mealTemplates[t][(i + idx) % mealTemplates[t].length];
+        const [name, kcal, p, c, f] = tpl;
+        meals.push({
+          Datum: iso, Uhrzeit: times[t], Mahlzeit: t,
+          Beschreibung: name, kcal, protein: p, carbs: c, fett: f,
+        });
+        kcalSum += kcal; pSum += p; cSum += c; fSum += f;
+      });
+      const aktiv = (health.find(h => h.Datum === iso) || {}).aktiveKcal || 400;
+      summary.push({
+        Datum: iso,
+        kcalGegessen: kcalSum,
+        kcalAktiv: aktiv,
+        netto: kcalSum - aktiv,
+        proteinGes: pSum, carbsGes: cSum, fettGes: fSum,
+        proteinZielP: Math.round(pSum / CONFIG.TARGET_PROTEIN * 100),
+        carbsZielP:   Math.round(cSum / CONFIG.TARGET_CARBS * 100),
+        fettZielP:    Math.round(fSum / CONFIG.TARGET_FAT * 100),
+      });
+    }
+    return { meals, health, weight, summary };
+  }
+
+  /* ============================================================================
+     CSV-PARSING gemaess kanonischem Schema
+     ============================================================================ */
+  function parseMeals(rows) {
+    return rows.filter(r => col(r,'Datum')).map(r => ({
+      Datum: parseDateISO(col(r,'Datum')),
+      Uhrzeit: String(col(r,'Uhrzeit')||'').trim(),
+      Mahlzeit: String(col(r,'Mahlzeit')||'').trim(),
+      Beschreibung: String(col(r,'Beschreibung')||'').trim(),
+      kcal: parseNum(col(r,'kcal')),
+      protein: parseNum(col(r,'Protein (g)')),
+      carbs: parseNum(col(r,'Carbs (g)')),
+      fett: parseNum(col(r,'Fett (g)')),
+    }));
+  }
+  function parseHealth(rows) {
+    return rows.filter(r => col(r,'Datum')).map(r => ({
+      Datum: parseDateISO(col(r,'Datum')),
+      Schritte: parseNum(col(r,'Schritte')),
+      aktiveKcal: parseNum(col(r,'Aktive kcal')),
+      workoutTyp: String(col(r,'Workout-Typ')||'').trim(),
+      workoutDauer: parseNum(col(r,'Workout-Dauer (min)')),
+      workoutKcal: parseNum(col(r,'Workout-kcal')),
+    }));
+  }
+  function parseWeight(rows) {
+    return rows.filter(r => col(r,'Datum')).map(r => ({
+      Datum: parseDateISO(col(r,'Datum')),
+      gewicht: parseNum(col(r,'Gewicht (kg)')),
+      notiz: String(col(r,'Notiz')||'').trim(),
+    })).filter(r => r.gewicht > 0);
+  }
+  function parseSummary(rows) {
+    return rows.filter(r => col(r,'Datum')).map(r => ({
+      Datum: parseDateISO(col(r,'Datum')),
+      kcalGegessen: parseNum(col(r,'kcal gegessen')),
+      kcalAktiv: parseNum(col(r,'kcal aktiv')),
+      netto: parseNum(col(r,'Netto-Bilanz')),
+      proteinGes: parseNum(col(r,'Protein ges.')),
+      carbsGes: parseNum(col(r,'Carbs ges.')),
+      fettGes: parseNum(col(r,'Fett ges.')),
+      proteinZielP: parseNum(col(r,'Protein-Ziel %')),
+      carbsZielP: parseNum(col(r,'Carbs-Ziel %')),
+      fettZielP: parseNum(col(r,'Fett-Ziel %')),
+    }));
+  }
+
+  /** Eine CSV-URL als Promise laden (PapaParse, download:true). */
+  function loadCsv(url) {
+    return new Promise((resolve, reject) => {
+      Papa.parse(url, {
+        download: true, header: true, skipEmptyLines: true,
+        complete: res => resolve(res.data || []),
+        error: err => reject(err),
+      });
+    });
+  }
+
+  /* ============================================================================
+     DATEN LADEN: live (CSV) oder Fallback (Beispiel) + localStorage-Cache
+     ============================================================================ */
+  async function loadData() {
+    const hasAnyUrl = CONFIG.SHEETS_URL_MEALS || CONFIG.SHEETS_URL_HEALTH ||
+                      CONFIG.SHEETS_URL_WEIGHT || CONFIG.SHEETS_URL_SUMMARY;
+
+    if (!hasAnyUrl) {
+      return { data: buildSampleData(), sample: true };
+    }
+
+    try {
+      const [mRows, hRows, wRows, sRows] = await Promise.all([
+        CONFIG.SHEETS_URL_MEALS   ? loadCsv(CONFIG.SHEETS_URL_MEALS)   : Promise.resolve([]),
+        CONFIG.SHEETS_URL_HEALTH  ? loadCsv(CONFIG.SHEETS_URL_HEALTH)  : Promise.resolve([]),
+        CONFIG.SHEETS_URL_WEIGHT  ? loadCsv(CONFIG.SHEETS_URL_WEIGHT)  : Promise.resolve([]),
+        CONFIG.SHEETS_URL_SUMMARY ? loadCsv(CONFIG.SHEETS_URL_SUMMARY) : Promise.resolve([]),
+      ]);
+      const data = {
+        meals: parseMeals(mRows),
+        health: parseHealth(hRows),
+        weight: parseWeight(wRows),
+        summary: parseSummary(sRows),
+      };
+      // Cache aktualisieren
+      try { localStorage.setItem(LS_KEY, JSON.stringify(data)); } catch(e){}
+      return { data, sample: false };
+    } catch (err) {
+      console.warn('CSV-Laden fehlgeschlagen, nutze Cache/Beispiel:', err);
+      const cached = readCache();
+      if (cached) return { data: cached, sample: false, stale: true };
+      return { data: buildSampleData(), sample: true };
+    }
+  }
+
+  function readCache() {
+    try {
+      const raw = localStorage.getItem(LS_KEY);
+      return raw ? JSON.parse(raw) : null;
+    } catch(e){ return null; }
+  }
+
+  /* ============================================================================
+     AUSWERTUNG / HILFEN
+     ============================================================================ */
+  function latestDate(data) {
+    const all = []
+      .concat(data.meals.map(x=>x.Datum))
+      .concat(data.summary.map(x=>x.Datum))
+      .concat(data.health.map(x=>x.Datum))
+      .concat(data.weight.map(x=>x.Datum))
+      .filter(Boolean).sort();
+    return all.length ? all[all.length-1] : isoToday();
+  }
+
+  function sumMacrosForDay(meals, iso) {
+    return meals.filter(m => m.Datum === iso).reduce((a,m) => {
+      a.kcal += m.kcal; a.protein += m.protein; a.carbs += m.carbs; a.fett += m.fett; return a;
+    }, { kcal:0, protein:0, carbs:0, fett:0 });
+  }
+
+  /** Ampel-Klasse anhand Prozent vom Ziel (naeher an 100 % = besser). */
+  function trafficByPct(pct) {
+    if (pct >= 85 && pct <= 115) return 'good';
+    if (pct >= 65 && pct <= 135) return 'warn';
+    return 'bad';
+  }
+  /** Ampel fuer Kalorien: unter/leicht ueber Budget gut. */
+  function trafficKcal(eaten, budget) {
+    const pct = budget ? (eaten/budget*100) : 0;
+    if (pct <= 100) return 'good';
+    if (pct <= 110) return 'warn';
+    return 'bad';
+  }
+  /** Ampel fuer Bewegung (aktive kcal). */
+  function trafficMove(aktiv) {
+    if (aktiv >= 400) return 'good';
+    if (aktiv >= 200) return 'warn';
+    return 'bad';
+  }
+
+  /* ============================================================================
+     RENDERING
+     ============================================================================ */
+  let charts = { weight: null, macro: null };
+  let STATE = { data: null, today: null };
+
+  function render(data, sample) {
+    STATE.data = data;
+    STATE.today = latestDate(data);
+
+    document.getElementById('notice').classList.toggle('show', !!sample);
+    renderHeader(data);
+    renderKpis(data);
+    renderNet(data);
+    renderWeightChart(data, currentRange);
+    renderMacroChart(data);
+    renderWeekTable(data);
+    renderMealLog(data);
+  }
+
+  function renderHeader(data) {
+    const today = STATE.today;
+    document.getElementById('headerDate').textContent = fmtDE(today);
+
+    const w = [...data.weight].sort((a,b)=>a.Datum.localeCompare(b.Datum));
+    if (!w.length) return;
+    const last = w[w.length-1];
+    document.getElementById('weightVal').textContent = last.gewicht.toFixed(1).replace('.',',') + ' kg';
+
+    const diff = last.gewicht - CONFIG.TARGET_WEIGHT;
+    const diffEl = document.getElementById('weightDiff');
+    diffEl.textContent = (diff >= 0 ? '+' : '') + diff.toFixed(1).replace('.',',') + ' kg zum Ziel';
+
+    // Trend aus letzten 3 Messpunkten
+    const trendEl = document.getElementById('weightTrend');
+    const recent = w.slice(-3);
+    let arrow = '→', cls = 'flat';
+    if (recent.length >= 2) {
+      const delta = recent[recent.length-1].gewicht - recent[0].gewicht;
+      if (delta <= -0.1) { arrow = '↓'; cls = 'down'; }
+      else if (delta >= 0.1) { arrow = '↑'; cls = 'up'; }
+    }
+    trendEl.textContent = arrow;
+    trendEl.className = 'trend ' + cls;
+  }
+
+  function renderKpis(data) {
+    const t = sumMacrosForDay(data.meals, STATE.today);
+
+    // Kalorien-Ring
+    document.getElementById('kcalEaten').textContent = Math.round(t.kcal);
+    document.getElementById('kcalBudget').textContent = '/ ' + CONFIG.TARGET_KCAL + ' kcal';
+    const circ = 2 * Math.PI * 48; // 301.6
+    const frac = Math.min(t.kcal / CONFIG.TARGET_KCAL, 1);
+    const ring = document.getElementById('kcalRing');
+    ring.style.strokeDashoffset = (circ * (1 - frac)).toFixed(1);
+    ring.setAttribute('stroke',
+      t.kcal <= CONFIG.TARGET_KCAL ? COLORS.kcal :
+      (t.kcal <= CONFIG.TARGET_KCAL*1.1 ? COLORS.warn : COLORS.bad));
+
+    const setMacro = (numId, barId, subId, val, target) => {
+      document.getElementById(numId).innerHTML = Math.round(val) + '<small>g</small>';
+      document.getElementById(barId).style.width = Math.min(val/target*100, 100) + '%';
+      document.getElementById(subId).textContent =
+        'Ziel ' + target + ' g · ' + Math.round(val/target*100) + ' %';
+    };
+    setMacro('pNum','pBar','pSub', t.protein, CONFIG.TARGET_PROTEIN);
+    setMacro('cNum','cBar','cSub', t.carbs,   CONFIG.TARGET_CARBS);
+    setMacro('fNum','fBar','fSub', t.fett,    CONFIG.TARGET_FAT);
+  }
+
+  function renderNet(data) {
+    const t = sumMacrosForDay(data.meals, STATE.today);
+    const h = data.health.find(x => x.Datum === STATE.today);
+    const aktiv = h ? h.aktiveKcal : 0;
+    const eaten = t.kcal;
+    const net = eaten - aktiv; // effektives Defizit (kleiner/negativ = besser)
+
+    document.getElementById('netVal').textContent =
+      (net >= 0 ? '+' : '') + Math.round(net) + ' kcal';
+    document.getElementById('inLbl').textContent = Math.round(eaten) + ' kcal';
+    document.getElementById('outLbl').textContent = Math.round(aktiv) + ' kcal';
+
+    const maxV = Math.max(eaten, aktiv, 1);
+    document.getElementById('inBar').style.width  = (eaten/maxV*100) + '%';
+    document.getElementById('outBar').style.width = (aktiv/maxV*100) + '%';
+
+    // Ampel: Netto deutlich unter Budget = gruen
+    const pill = document.getElementById('netPill');
+    let cls, txt;
+    if (net <= CONFIG.TARGET_KCAL - 300) { cls=COLORS.good; txt='Im Defizit'; }
+    else if (net <= CONFIG.TARGET_KCAL)  { cls=COLORS.warn; txt='Knapp im Ziel'; }
+    else                                 { cls=COLORS.bad;  txt='Über Budget'; }
+    pill.style.background = cls;
+    pill.style.color = '#10101c';
+    pill.textContent = txt;
+  }
+
+  /* --- Gewichts-Chart mit 7-Tage gleitendem Durchschnitt + Ziellinie --- */
+  let currentRange = 30;
+  function movingAvg(values, win) {
+    return values.map((_, i) => {
+      const start = Math.max(0, i - win + 1);
+      const slice = values.slice(start, i + 1);
+      return slice.reduce((a,b)=>a+b,0) / slice.length;
+    });
+  }
+
+  function renderWeightChart(data, range) {
+    const w = [...data.weight].sort((a,b)=>a.Datum.localeCompare(b.Datum)).slice(-range);
+    const labels = w.map(x => x.Datum.slice(5).replace('-','.'));  // MM.DD -> TT
+    const vals = w.map(x => x.gewicht);
+    const avg = movingAvg(vals, 7);
+    const target = w.map(() => CONFIG.TARGET_WEIGHT);
+
+    if (charts.weight) charts.weight.destroy();   // Doppel-Render vermeiden
+    const ctx = document.getElementById('weightChart');
+    charts.weight = new Chart(ctx, {
+      type: 'line',
+      data: {
+        labels,
+        datasets: [
+          { label:'Gewicht', data:vals, borderColor:COLORS.protein,
+            backgroundColor:'rgba(79,195,247,.12)', borderWidth:2,
+            pointRadius:2, pointHoverRadius:5, tension:0, fill:true },
+          { label:'7-Tage-Schnitt', data:avg, borderColor:COLORS.carbs,
+            borderWidth:2, pointRadius:0, tension:.4, fill:false },
+          { label:'Ziel '+CONFIG.TARGET_WEIGHT+' kg', data:target, borderColor:COLORS.muted,
+            borderWidth:1.5, borderDash:[6,5], pointRadius:0, fill:false },
+        ],
+      },
+      options: {
+        responsive:true, maintainAspectRatio:false,
+        interaction:{ mode:'index', intersect:false },
+        plugins:{
+          legend:{ labels:{ color:COLORS.ink2, boxWidth:14, font:{size:12} } },
+          tooltip:{ callbacks:{ label:c => c.dataset.label+': '+c.parsed.y.toFixed(1).replace('.',',')+' kg' } },
+        },
+        scales:{
+          x:{ grid:{ color:COLORS.grid }, ticks:{ color:COLORS.muted, maxTicksLimit:8, font:{size:11} } },
+          y:{ grid:{ color:COLORS.grid }, ticks:{ color:COLORS.muted, font:{size:11},
+                callback:v => v.toFixed(0)+' kg' } },
+        },
+      },
+    });
+  }
+
+  /* --- Makro-Donut: Ist-Split innen, Soll-Verteilung als duenner Aussenring --- */
+  function renderMacroChart(data) {
+    const t = sumMacrosForDay(data.meals, STATE.today);
+    // Energie-Anteile (kcal): Protein/Carbs 4, Fett 9
+    const pk = t.protein*4, ck = t.carbs*4, fk = t.fett*9;
+    const istTotal = pk+ck+fk || 1;
+    const ist = [pk, ck, fk];
+
+    const spk=CONFIG.TARGET_PROTEIN*4, sck=CONFIG.TARGET_CARBS*4, sfk=CONFIG.TARGET_FAT*9;
+    const sollTotal = spk+sck+sfk || 1;
+    const soll = [spk, sck, sfk];
+
+    if (charts.macro) charts.macro.destroy();
+    const ctx = document.getElementById('macroChart');
+    charts.macro = new Chart(ctx, {
+      type: 'doughnut',
+      data: {
+        labels: ['Protein','Carbs','Fett'],
+        datasets: [
+          { // innerer Ist-Ring
+            data: ist, backgroundColor:[COLORS.protein,COLORS.carbs,COLORS.fat],
+            borderColor: COLORS.surface, borderWidth:2, weight:3,
+          },
+          { // aeusserer Soll-Ring (duenn)
+            data: soll,
+            backgroundColor:['rgba(79,195,247,.35)','rgba(255,183,77,.35)','rgba(129,199,132,.35)'],
+            borderColor: COLORS.surface, borderWidth:2, weight:1,
+          },
+        ],
+      },
+      options: {
+        responsive:true, maintainAspectRatio:false, cutout:'52%',
+        plugins:{
+          legend:{ display:false },
+          tooltip:{ callbacks:{ label:(c) => {
+            const isIst = c.datasetIndex === 0;
+            const tot = isIst ? istTotal : sollTotal;
+            const pct = Math.round(c.parsed/tot*100);
+            return (isIst?'Ist ':'Soll ') + c.label + ': ' + pct + ' %';
+          } } },
+        },
+      },
+    });
+  }
+
+  /* --- Wochen-Heatmap: Mo-So, Zeilen Kalorien/Protein/Bewegung --- */
+  function renderWeekTable(data) {
+    const head = document.getElementById('weekHead');
+    const body = document.getElementById('weekBody');
+    head.innerHTML = '<th></th>';
+    body.innerHTML = '';
+
+    // letzte 7 Tage bis STATE.today
+    const dayNames = ['So','Mo','Di','Mi','Do','Fr','Sa'];
+    function addDaysISO(iso, n) {
+      const d = new Date(iso + 'T00:00:00');
+      d.setDate(d.getDate() + n);
+      const y = d.getFullYear(), m = String(d.getMonth()+1).padStart(2,'0'), day = String(d.getDate()).padStart(2,'0');
+      return `${y}-${m}-${day}`;
+    }
+    const days = [];
+    for (let i = 6; i >= 0; i--) {
+      days.push(addDaysISO(STATE.today, -i));
+    }
+    days.forEach(iso => {
+      const d = new Date(iso + 'T00:00:00');
+      head.innerHTML += `<th>${dayNames[d.getDay()]}<br>${iso.slice(8)}.</th>`;
+    });
+
+    const rows = [
+      { label:'Kalorien', fn: iso => {
+          const e = sumMacrosForDay(data.meals, iso).kcal;
+          if (!e) return { txt:'–', cls:'na' };
+          return { txt: Math.round(e), cls: trafficKcal(e, CONFIG.TARGET_KCAL) };
+        } },
+      { label:'Protein', fn: iso => {
+          const p = sumMacrosForDay(data.meals, iso).protein;
+          if (!p) return { txt:'–', cls:'na' };
+          return { txt: Math.round(p)+'g', cls: trafficByPct(p/CONFIG.TARGET_PROTEIN*100) };
+        } },
+      { label:'Bewegung', fn: iso => {
+          const h = data.health.find(x => x.Datum === iso);
+          if (!h) return { txt:'–', cls:'na' };
+          return { txt: Math.round(h.aktiveKcal), cls: trafficMove(h.aktiveKcal) };
+        } },
+    ];
+
+    rows.forEach(r => {
+      const tr = document.createElement('tr');
+      tr.innerHTML = `<th>${r.label}</th>`;
+      days.forEach(iso => {
+        const { txt, cls } = r.fn(iso);
+        tr.innerHTML += `<td><div class="heat ${cls}">${txt}</div></td>`;
+      });
+      body.appendChild(tr);
+    });
+  }
+
+  /* --- Mahlzeiten-Log heute + verbleibendes Budget --- */
+  const MEAL_LABEL = {
+    Fruehstueck:'Frühstück', Mittagessen:'Mittag', Abendessen:'Abend', Snack:'Snack'
+  };
+  function renderMealLog(data) {
+    const today = STATE.today;
+    const meals = data.meals.filter(m => m.Datum === today)
+      .sort((a,b)=> (a.Uhrzeit||'').localeCompare(b.Uhrzeit||''));
+    const eaten = meals.reduce((a,m)=>a+m.kcal,0);
+    const remaining = CONFIG.TARGET_KCAL - eaten;
+
+    document.getElementById('budgetEaten').textContent = Math.round(eaten) + ' kcal';
+    const bn = document.getElementById('budgetNum');
+    bn.textContent = (remaining>=0?'':'') + Math.round(remaining) + ' kcal';
+    bn.className = 'num ' + (remaining >= 0 ? 'pos' : 'neg');
+
+    const list = document.getElementById('mealList');
+    list.innerHTML = '';
+    if (!meals.length) {
+      list.innerHTML = '<div class="empty">Noch keine Mahlzeiten erfasst.</div>';
+      return;
+    }
+    meals.forEach(m => {
+      const el = document.createElement('div');
+      el.className = 'meal';
+      el.innerHTML = `
+        <div class="mtype">${MEAL_LABEL[m.Mahlzeit] || m.Mahlzeit || '–'}</div>
+        <div class="mbody">
+          <div class="mname">${m.Beschreibung || '—'} <span class="mtime">${m.Uhrzeit||''}</span></div>
+          <div class="mmacros">
+            P <b>${Math.round(m.protein)}g</b> · C <b>${Math.round(m.carbs)}g</b> · F <b>${Math.round(m.fett)}g</b>
+          </div>
+        </div>
+        <div class="mkcal">${Math.round(m.kcal)}</div>`;
+      list.appendChild(el);
+    });
+  }
+
+  /* ============================================================================
+     INIT + Range-Umschalter + Auto-Refresh
+     ============================================================================ */
+  document.getElementById('rangeSeg').addEventListener('click', e => {
+    const btn = e.target.closest('button');
+    if (!btn) return;
+    currentRange = parseInt(btn.dataset.range, 10);
+    document.querySelectorAll('#rangeSeg button').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    if (STATE.data) renderWeightChart(STATE.data, currentRange);
+  });
+
+  async function refresh() {
+    const { data, sample } = await loadData();
+    render(data, sample);
+  }
+
+  // Chart.js globale Defaults (dunkel)
+  if (window.Chart) {
+    Chart.defaults.color = COLORS.ink2;
+    Chart.defaults.font.family = '-apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, sans-serif';
+  }
+
+  // 1) Offline-Cache sofort anzeigen (falls vorhanden), dann frische Daten laden
+  (function boot() {
+    const cached = readCache();
+    if (cached && cached.meals) {
+      try { render(cached, false); } catch(e){ console.warn(e); }
+    }
+    refresh();
+    // Auto-Refresh
+    setInterval(refresh, Math.max(30, CONFIG.REFRESH_INTERVAL) * 1000);
+    document.getElementById('refreshNote').textContent =
+      'Automatische Aktualisierung alle ' + Math.round(CONFIG.REFRESH_INTERVAL/60) + ' Min.';
+  })();
+  </script>
+</body>
+</html>

@@ -1,0 +1,33 @@
+### TAB: Mahlzeiten ### (Kopiere diese Zeilen in das Blatt "Mahlzeiten". Spalten: A Datum, B Uhrzeit, C Mahlzeit, D Beschreibung, E kcal, F Protein (g), G Carbs (g), H Fett (g))
+Datum,Uhrzeit,Mahlzeit,Beschreibung,kcal,Protein (g),Carbs (g),Fett (g)
+2026-11-06,07:30,Fruehstueck,Haferflocken mit Magerquark und Beeren,350,28,35,9
+2026-11-06,12:30,Mittagessen,Haehnchenbrust mit Reis und Brokkoli,520,48,25,14
+2026-11-06,16:00,Snack,Proteinshake mit Mandeln,220,32,8,9
+2026-11-06,19:30,Abendessen,Lachs mit Ofengemuese,610,38,12,33
+2026-11-07,07:45,Fruehstueck,Ruehrei mit Vollkornbrot,380,26,22,18
+2026-11-07,13:00,Mittagessen,Pute mit Suesskartoffel,500,45,30,12
+2026-11-07,15:30,Snack,Griechischer Joghurt mit Honig,160,18,10,5
+2026-11-07,20:00,Abendessen,Rindersteak mit gemischtem Salat,640,50,8,30
+#
+### TAB: Health ### (Kopiere diese Zeilen in das Blatt "Health". Spalten: A Datum, B Schritte, C Aktive kcal, D Workout-Typ, E Workout-Dauer (min), F Workout-kcal)
+Datum,Schritte,Aktive kcal,Workout-Typ,Workout-Dauer (min),Workout-kcal
+2026-11-06,8500,520,Krafttraining,60,320
+2026-11-07,11200,680,Laufen,45,450
+2026-11-08,6300,300,–,0,0
+2026-11-09,9800,610,Radfahren,75,420
+2026-11-10,12500,720,Laufen,50,480
+2026-11-11,7400,410,Krafttraining,55,300
+2026-11-12,10100,590,Schwimmen,40,350
+#
+### TAB: Gewicht ### (Kopiere diese Zeilen in das Blatt "Gewicht". Spalten: A Datum, B Gewicht (kg), C Notiz)
+Datum,Gewicht (kg),Notiz
+2026-11-06,78.0,Startgewicht
+2026-11-07,77.9,
+2026-11-08,77.8,
+2026-11-09,77.9,mehr Wasser getrunken
+2026-11-10,77.6,
+2026-11-11,77.5,
+2026-11-12,77.4,
+2026-11-13,77.3,Ziel 76 kg
+#
+### HINWEIS: Der Tab "Tageszusammenfassung" ist rein formel-basiert und wird NICHT aus dieser CSV befuellt. Siehe sheets-setup.md fuer die Formeln. ###

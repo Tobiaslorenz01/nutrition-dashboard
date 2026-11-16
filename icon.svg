@@ -1,0 +1,35 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512" role="img" aria-label="Nutrition Coach App Icon">
+  <!-- Dunkler, leicht radial aufgehellter Hintergrund -->
+  <defs>
+    <radialGradient id="bg" cx="50%" cy="38%" r="75%">
+      <stop offset="0%" stop-color="#242444"/>
+      <stop offset="100%" stop-color="#1a1a2e"/>
+    </radialGradient>
+    <!-- Verlauf der Flamme: Blau (Protein-Akzent) -> Gruen -->
+    <linearGradient id="flame" x1="0%" y1="100%" x2="0%" y2="0%">
+      <stop offset="0%" stop-color="#4FC3F7"/>
+      <stop offset="55%" stop-color="#5BD1C0"/>
+      <stop offset="100%" stop-color="#81C784"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="512" height="512" rx="112" fill="url(#bg)"/>
+
+  <!-- Stilisierte Flamme / Blatt als Symbol fuer Energie & Ernaehrung -->
+  <path fill="url(#flame)" d="
+    M256 96
+    C 300 168, 356 196, 356 288
+    a 100 100 0 0 1 -200 0
+    c 0 -44, 22 -74, 44 -104
+    c 10 26, 30 38, 44 44
+    c -2 -46, -22 -84, -32 -132
+    Z"/>
+
+  <!-- Inneres helles Herz/Kern als Highlight -->
+  <path fill="#1a1a2e" opacity="0.9" d="
+    M256 232
+    c 20 28, 40 40, 40 70
+    a 40 40 0 0 1 -80 0
+    c 0 -30, 20 -42, 40 -70
+    Z"/>
+</svg>
